@@ -6,22 +6,6 @@
 name: Windows ARM64
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/windows-arm64.yml"
-      - "packaging/windows/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/**"
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/windows-arm64.yml"
-      - "packaging/windows/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/**"
   workflow_dispatch:
 
 concurrency:

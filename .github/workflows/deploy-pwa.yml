@@ -1,0 +1,60 @@
+name: Deploy LightCraft PWA to GitHub Pages
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-pwa.yml"
+      - "apps/lightcraft-web/**"
+      - "crates/**"
+      - "xtask/**"
+      - "pwa/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: lightcraft-pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: lightcraft-web-pwa
+      - name: Install matching wasm-bindgen CLI
+        run: |
+          curl -fsSL https://github.com/wasm-bindgen/wasm-bindgen/releases/download/0.2.129/wasm-bindgen-0.2.129-x86_64-unknown-linux-musl.tar.gz | tar -xz
+          install wasm-bindgen-0.2.129-x86_64-unknown-linux-musl/wasm-bindgen "$HOME/.cargo/bin/wasm-bindgen"
+          wasm-bindgen --version
+      - name: Build only the LightCraft browser bundle
+        run: cargo xtask web
+      - name: Verify browser bundle
+        run: |
+          test -s target/web-site/index.html
+          test -s target/web-site/lightcraft_web.js
+          test -s target/web-site/lightcraft_web_bg.wasm
+          test -s target/web-site/worker.js
+      - name: Prepare installable PWA
+        run: python3 pwa/prepare_site.py target/web-site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/web-site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
