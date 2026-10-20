@@ -1418,6 +1418,67 @@ impl LightcraftApp {
         }
     }
 
+    /// Single-pane browser layout for phone-sized viewports. The tab selection is
+    /// transient and never overwrites the user's saved desktop docking arrangement.
+    fn phone_ui(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let t = theme::Tokens::get(&ctx);
+        let tab_key = egui::Id::new("lightcraft-phone-tab");
+        let default_tab = if self.ui.view == state::ViewMode::Detail { 1_u8 } else { 0_u8 };
+        let mut tab = ctx.data(|data| data.get_temp::<u8>(tab_key)).unwrap_or(default_tab);
+        egui::Panel::top("lightcraft-phone-actions")
+            .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(6, 6)))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Import").clicked() {
+                        let _ = self.run("file.addPhotos", serde_json::json!({}));
+                    }
+                    if ui.button("Export").clicked() {
+                        let _ = self.run("dialog.export", serde_json::json!({}));
+                    }
+                    if ui.button("Back Up").clicked() {
+                        let _ = self.run("file.backupLibrary", serde_json::json!({}));
+                    }
+                });
+            });
+        egui::Panel::bottom("lightcraft-phone-tabs")
+            .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(5, 6)))
+            .show(ui, |ui| {
+                egui::ScrollArea::horizontal().id_salt("lightcraft-phone-tabs-scroll").show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        for (n, label) in [(0, "Photos"), (1, "Photo"), (2, "Library"), (3, "Adjust"), (4, "Presets")] {
+                            if ui.selectable_label(tab == n, label).clicked() {
+                                tab = n;
+                                if n == 0 {
+                                    let _ = self.run("view.photoGrid", serde_json::json!({}));
+                                } else if n == 1 || n == 3 {
+                                    let _ = self.run("view.detail", serde_json::json!({}));
+                                }
+                                if n == 3 && self.ui.right == state::RightPanel::None {
+                                    self.ui.right = state::RightPanel::Edit;
+                                }
+                            }
+                        }
+                    });
+                });
+            });
+        let grid_open = tab == 0;
+        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
+            match tab {
+                0 => panels::grid::show(self, ui),
+                1 => panels::detail::show(self, ui),
+                2 => panels::left::show(self, ui),
+                3 => panels::right::show(self, ui),
+                _ => panels::presets::show(self, ui),
+            }
+        });
+        // Tapping a thumbnail switches the engine to Detail; follow it on the next frame.
+        if grid_open && self.ui.view == state::ViewMode::Detail {
+            tab = 1;
+        }
+        ctx.data_mut(|data| data.insert_temp(tab_key, tab));
+    }
+
     /// Lay out the whole window.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         i18n::set_language(self.ui.language);
@@ -1452,12 +1513,16 @@ impl LightcraftApp {
         }
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
-        panels::topbar::show(self, ui);
-        panels::library_problem::banner(self, ui);
-        panels::strip::show(self, ui);
-        // filled: the gaps the dock leaves between its panes show chrome, not the dark clear colour
-        let chrome = theme::Tokens::get(&ctx).chrome;
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(chrome)).show(ui, |ui| docking::show(self, ui));
+        if cfg!(target_arch = "wasm32") && ctx.content_rect().width() < 760.0 {
+            self.phone_ui(ui);
+        } else {
+            panels::topbar::show(self, ui);
+            panels::library_problem::banner(self, ui);
+            panels::strip::show(self, ui);
+            // Desktop docking layouts and panel preferences remain untouched on phones.
+            let chrome = theme::Tokens::get(&ctx).chrome;
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(chrome)).show(ui, |ui| docking::show(self, ui));
+        }
         self.lights_out(&ctx);
         panels::second::show(self, &ctx);
         panels::notices::show(self, &ctx);
